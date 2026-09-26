@@ -1,0 +1,4 @@
+# Copy this file to terraform.tfvars and replace the example value
+# with your own SSH public key.
+
+admin_ssh_public_key = "ssh-ed25519 YOUR_PUBLIC_KEY_HERE"
