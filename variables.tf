@@ -49,3 +49,9 @@ variable "tags" {
     ManagedBy   = "Terraform"
   }
 }
+
+variable "admin_ssh_public_key" {
+  description = "SSH public key used to authenticate the Linux administrator account."
+  type        = string
+  sensitive   = true
+}
