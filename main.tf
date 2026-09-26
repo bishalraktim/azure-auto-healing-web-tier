@@ -119,6 +119,8 @@ resource "azurerm_linux_virtual_machine_scale_set" "web" {
   location            = azurerm_resource_group.main.location
   sku                 = var.vm_sku
   instances           = var.instance_count
+  upgrade_mode        = "Automatic"
+  health_probe_id     = azurerm_lb_probe.http.id
 
   custom_data = filebase64("${path.module}/cloud-init.yaml")
 
@@ -142,6 +144,12 @@ resource "azurerm_linux_virtual_machine_scale_set" "web" {
     caching              = "ReadWrite"
   }
 
+  automatic_instance_repair {
+    enabled      = true
+    grace_period = "PT10M"
+    action       = "Replace"
+  }
+
   network_interface {
     name    = "${local.resource_prefix}-nic"
     primary = true
@@ -157,6 +165,7 @@ resource "azurerm_linux_virtual_machine_scale_set" "web" {
   tags = var.tags
 
   depends_on = [
-    azurerm_lb_rule.http
+    azurerm_lb_rule.http,
+    azurerm_lb_outbound_rule.web
   ]
 }
