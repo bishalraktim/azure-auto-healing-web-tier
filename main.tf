@@ -169,3 +169,23 @@ resource "azurerm_linux_virtual_machine_scale_set" "web" {
     azurerm_lb_outbound_rule.web
   ]
 }
+
+resource "azurerm_monitor_autoscale_setting" "web" {
+  name                = "${local.resource_prefix}-autoscale"
+  resource_group_name = azurerm_resource_group.main.name
+  location            = azurerm_resource_group.main.location
+  target_resource_id  = azurerm_linux_virtual_machine_scale_set.web.id
+  enabled             = true
+
+  profile {
+    name = "maintain-minimum-capacity"
+
+    capacity {
+      default = var.instance_count
+      minimum = var.instance_count
+      maximum = var.instance_count + 1
+    }
+  }
+
+  tags = var.tags
+}
