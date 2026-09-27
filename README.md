@@ -2,139 +2,332 @@
 
 ## Overview
 
-This project deploys an auto-healing web tier in Microsoft Azure using Terraform.
+This project deploys an auto-healing web tier in Microsoft Azure using Terraform. Internet traffic enters through a Standard Public IP and Azure Standard Load Balancer and is distributed across a Virtual Machine Scale Set (VMSS) running a minimum of two Ubuntu instances. Each instance is provisioned automatically with NGINX by cloud-init.
 
-The solution is designed to maintain web availability if a single virtual machine instance is lost. Traffic is distributed across multiple instances behind an Azure Load Balancer, while the compute platform maintains the required instance capacity.
+The design demonstrates Infrastructure as Code (IaC), N+1 capacity, health-based instance recovery, automatic capacity restoration, repeatable deployment and Terraform idempotency.
 
-A lightweight NGINX web server is provisioned automatically on each instance.
+## Why Azure
 
-## Objectives
+Azure was selected because it is the cloud platform in which I have the most hands-on infrastructure and hybrid administration experience. This allowed the exercise to focus on resilient architecture and Terraform rather than learning a second cloud platform at the same time.
 
-The solution is designed to demonstrate:
+Terraform was selected for IaC because it provides a declarative workflow, reusable modules, execution plans and repeatable lifecycle management. The project was developed and validated with Terraform 1.16.4 and AzureRM provider 4.81.0.
 
-- Self-healing infrastructure where a terminated instance is automatically replaced.
-- Infrastructure provisioning entirely through Infrastructure as Code (IaC).
-- Idempotent Terraform deployments where a subsequent plan reports no infrastructure changes.
-- N+1 capacity with at least two web instances behind a load balancer.
-- Automatic provisioning of an NGINX web page.
-- Clear naming, tagging, variables and reusable Terraform structure.
-- A fully deployed estimated monthly cost of no more than AUD 20.
+## Architecture
 
-## Technology Choices
+![Azure auto-healing web tier architecture](docs/architecture/azure-auto-healing-web-tier.png)
 
-### Cloud Platform
+Editable source: [`docs/architecture/azure-auto-healing-web-tier.drawio`](docs/architecture/azure-auto-healing-web-tier.drawio)
 
-Microsoft Azure was selected because of existing hands-on experience with Azure infrastructure and Microsoft hybrid environments.
+The deployed architecture contains:
 
-### Infrastructure as Code
+- Azure Resource Group in Australia East.
+- Virtual Network `10.10.0.0/16` with web subnet `10.10.1.0/24`.
+- Network Security Group allowing inbound TCP/80 only for the web workload.
+- Standard static Public IP.
+- Azure Standard Load Balancer with HTTP health probe, inbound HTTP rule and explicit outbound rule.
+- Linux Virtual Machine Scale Set with desired/minimum capacity of two instances.
+- Ubuntu 22.04 LTS ARM64 instances using `Standard_B2pts_v2`.
+- cloud-init bootstrap that installs, enables and starts NGINX.
+- Automatic Instance Repair using the Load Balancer health probe and `Replace` action.
+- Azure Monitor Autoscale configured with minimum/default capacity 2 and maximum 3, maintaining the required minimum capacity after an instance is explicitly deleted.
 
-Terraform was selected as the Infrastructure as Code platform. The project is being developed and validated using Terraform 1.16.4.
-
-## Proposed Architecture
-
-The initial design consists of:
-
-- Azure Resource Group
-- Virtual Network
-- Subnet
-- Network Security Group
-- Public IP address
-- Azure Load Balancer
-- Load Balancer health probe and rule
-- Azure Virtual Machine Scale Set
-- Minimum of two Linux VM instances
-- NGINX automatically provisioned on each instance
-
-The final architecture will be confirmed after implementation and validation of the self-healing behaviour and cost requirements.
-
-> Architecture diagram to be added after the design is validated.
+Microsoft documents that VMSS automatic repairs can use Load Balancer health probes and replace unhealthy instances. The configured `PT10M` grace period is the minimum supported value and gives newly created or recently changed instances time to become healthy before a repair action is considered:
+https://learn.microsoft.com/en-us/azure/virtual-machine-scale-sets/virtual-machine-scale-sets-automatic-instance-repairs
 
 ## Repository Structure
 
-The repository structure will evolve as the solution is implemented. Terraform configuration, documentation, architecture diagrams and validation evidence will be maintained within this repository.
+```text
+.
+├── cloud-init.yaml
+├── main.tf
+├── moved.tf
+├── outputs.tf
+├── providers.tf
+├── terraform.tfvars.example
+├── variables.tf
+├── versions.tf
+├── modules/
+│   └── web-tier/
+│       ├── main.tf
+│       ├── outputs.tf
+│       └── variables.tf
+└── docs/
+    ├── architecture/
+    │   ├── azure-auto-healing-web-tier.drawio
+    │   └── azure-auto-healing-web-tier.png
+    └── evidence/
+        ├── cost/
+        ├── deployment/
+        ├── idempotency/
+        └── self-healing/
+```
+
+The root module supplies user-facing inputs and calls the reusable `modules/web-tier` child module. `moved.tf` records the refactor from the original root resource addresses into the child module without recreating existing infrastructure.
 
 ## Prerequisites
 
-Development environment:
+The following are required to reproduce the deployment:
 
-- Windows 11
-- PowerShell 7.6.6
-- Terraform 1.16.4
-- Azure CLI 2.90.0
-- Git 2.55.0
-- Visual Studio Code
+- An Azure subscription with permission to create the resources in this project.
+- Terraform 1.16 or later.
+- Azure CLI.
+- Git.
+- An SSH key pair. Only the public key is supplied to Terraform.
 
-Azure authentication is performed interactively using Azure CLI. Credentials, subscription identifiers and other account-specific information are not stored in this repository.
+Authenticate to Azure:
+
+```powershell
+az login
+```
+
+Clone the repository and enter the project directory:
+
+```powershell
+git clone https://github.com/bishalraktim/azure-auto-healing-web-tier.git
+Set-Location .\azure-auto-healing-web-tier
+```
+
+If an SSH key is required, create one outside the repository:
+
+```powershell
+ssh-keygen -t ed25519 -f "$HOME\.ssh\azure-web-lab" -C "azure-web-lab"
+```
+
+Copy the example variable file:
+
+```powershell
+Copy-Item .\terraform.tfvars.example .\terraform.tfvars
+```
+
+Replace `YOUR_PUBLIC_KEY_HERE` in `terraform.tfvars` with the contents of the `.pub` file. `terraform.tfvars`, Terraform state, plan files and private keys are excluded from Git.
 
 ## Deployment
 
-Terraform deployment instructions will be documented here as the configuration is implemented and validated.
+Initialise, format and validate the configuration:
 
-Planned workflow:
+```powershell
+terraform init
+terraform fmt -recursive
+terraform validate
+```
 
-1. Initialise Terraform.
-2. Validate the configuration.
-3. Review the Terraform execution plan.
-4. Apply the configuration.
-5. Validate the deployed web tier.
-6. Run a second Terraform plan to confirm idempotency.
+Review the execution plan:
 
-Exact commands and expected results will be added after validation.
+```powershell
+terraform plan
+```
+
+From an empty project environment the validated plan reported:
+
+```text
+Plan: 13 to add, 0 to change, 0 to destroy.
+```
+
+Provision the complete stack:
+
+```powershell
+terraform apply
+```
+
+After reviewing the plan, enter `yes` when prompted. A fresh end-to-end rebuild completed with:
+
+```text
+Apply complete! Resources: 13 added, 0 changed, 0 destroyed.
+```
+
+The command above is the single IaC deployment action after prerequisites and input configuration are complete; no Azure resources need to be created manually.
+
+Retrieve the endpoint and resource names without hard-coding environment-specific values:
+
+```powershell
+terraform output
+```
+
+The Public IP can change after a full destroy/rebuild, so validation should always use the current Terraform output rather than a previously allocated address.
+
+### Deployment Evidence
+
+The Terraform-managed Azure resources are shown below.
+
+![Azure resources](docs/evidence/deployment/01-azure-resources.png)
+
+Two healthy VMSS instances were verified before failure testing:
+
+![Two VMSS instances](docs/evidence/deployment/02-two-vmss-instances.png)
+
+The load-balanced endpoint successfully serves the default NGINX page:
+
+![NGINX load-balanced endpoint](docs/evidence/deployment/03-nginx-load-balanced-endpoint.png)
 
 ## Validation
 
-The completed solution will be tested for:
+### 1. N+1 Capacity
 
-- Successful infrastructure provisioning.
-- Two or more healthy web instances.
-- Load-balanced access to the NGINX web tier.
-- Continued web availability during the loss of a single instance.
-- Automatic replacement of a terminated instance.
-- Successful provisioning of NGINX on the replacement instance.
-- Terraform idempotency.
-- Infrastructure cleanup using Terraform.
+The VM Scale Set was configured with a desired and minimum capacity of two instances. Both instances were verified as successfully provisioned before failure testing:
 
-Validation evidence will be added as testing is completed.
+```powershell
+az vmss list-instances `
+  --resource-group web-lab-rg `
+  --name web-lab-vmss `
+  --output table
+```
 
-## Security
+### 2. Load-Balanced Web Endpoint
 
-The implementation will follow these principles:
+The endpoint can be validated from PowerShell using the current Terraform output:
 
-- No credentials or secrets committed to source control.
-- Terraform state excluded from the Git repository.
-- Terraform variable files containing environment-specific values excluded from source control.
-- No individual public IP addresses assigned to backend VM instances.
-- Network access restricted to only what is required by the web tier.
-- Azure authentication handled outside the Terraform configuration.
+```powershell
+$webUrl = terraform output -raw web_url
+curl.exe $webUrl
+```
 
-Security controls will be updated as the architecture is implemented.
+The response returns the default NGINX welcome page.
+
+### 3. Self-Healing / Capacity Recovery
+
+A VMSS instance was deliberately deleted while the load-balanced HTTP endpoint was continuously monitored:
+
+```powershell
+az vmss delete-instances `
+  --resource-group web-lab-rg `
+  --name web-lab-vmss `
+  --instance-ids 2
+```
+
+In the selected failure-test capture, one brief failed HTTP request was observed during the transition; subsequent requests returned HTTP 200. Azure then restored the VMSS to two instances by creating a replacement instance. A separate repeat test after the clean rebuild showed a short transition spanning approximately four seconds (11:33:20 to 11:33:24), with two failed samples and a successful HTTP 200 sample between them. Both observations are retained as measured evidence rather than being described as zero-downtime.
+
+The screenshot below captures the continuous HTTP monitor during deliberate instance deletion.
+
+![Instance deletion with HTTP monitoring](docs/evidence/self-healing/01-instance-deletion-http-monitor.png)
+
+The replacement instance was subsequently verified with NGINX active and returning HTTP 200 locally:
+
+```powershell
+az vmss run-command invoke `
+  --resource-group web-lab-rg `
+  --name web-lab-vmss `
+  --instance-id <replacement-instance-id> `
+  --command-id RunShellScript `
+  --scripts "systemctl is-active nginx && curl -s -o /dev/null -w '%{http_code}' http://localhost"
+```
+
+Expected validation output:
+
+```text
+active
+200
+```
+
+The before/after evidence below shows the original instance IDs, the deliberate deletion, the surviving VM retaining its original ID, the new replacement instance receiving a different VM ID, and the replacement NGINX validation (`active` / `200`).
+
+![Before and after VMSS instance IDs with replacement validation](docs/evidence/self-healing/02-before-after-instance-ids-and-validation.png)
+
+The test demonstrates automatic restoration of the required VMSS capacity. The observed transient interruption is reported as measured rather than claiming zero dropped requests.
+
+A repeat failure test after the clean rebuild is retained below as additional evidence:
+
+![Clean rebuild repeat failure test](docs/evidence/self-healing/03-clean-rebuild-repeat-test.png)
+
+### 4. Full Rebuild
+
+The complete Terraform-managed stack was destroyed and recreated to prove reproducibility rather than relying on previously deployed infrastructure:
+
+```powershell
+terraform destroy
+terraform plan
+terraform apply
+```
+
+Observed results:
+
+```text
+Destroy complete! Resources: 13 destroyed.
+Plan: 13 to add, 0 to change, 0 to destroy.
+Apply complete! Resources: 13 added, 0 changed, 0 destroyed.
+```
+
+After the rebuild, the VMSS again contained two instances and the NGINX page was reachable through the newly allocated Load Balancer frontend IP.
+
+### 5. Idempotency
+
+After deployment and recovery testing, a subsequent plan was run:
+
+```powershell
+terraform plan
+```
+
+Terraform reported:
+
+```text
+No changes. Your infrastructure matches the configuration.
+```
+
+This confirms the committed configuration converges cleanly without unnecessary infrastructure changes.
+
+![Terraform plan showing no changes](docs/evidence/idempotency/01-terraform-plan-no-changes.png)
+
+## Security and Network Design
+
+The lab intentionally keeps the exposure small:
+
+- Backend VMSS instances have no individual public IP addresses.
+- No inbound SSH rule is exposed publicly.
+- Linux password authentication is disabled; administration uses an SSH public key.
+- The NSG permits only inbound TCP/80 for the demonstrated web workload.
+- The subnet has default outbound access disabled.
+- VM outbound Internet access required by cloud-init is provided explicitly through the Standard Load Balancer outbound rule.
+- Terraform state, `.tfvars`, plan files, private keys, certificates and environment files are excluded from source control.
+- Azure authentication is performed outside the Terraform configuration.
+
+HTTP is deliberate for this non-sensitive static availability demonstration. A production deployment would use a DNS name, HTTPS/TLS with trusted certificate management, and normally redirect HTTP to HTTPS. Additional production hardening would also consider zone-spanning VMSS instances, stronger observability and workload-specific access controls.
+
+Azure Standard Load Balancer is used rather than Basic Load Balancer. Microsoft retired Basic Load Balancer on 30 September 2025, and Standard Load Balancer supports explicit outbound rules and a secure-by-default inbound model:
+https://learn.microsoft.com/en-us/azure/load-balancer/skus
 
 ## Cost Estimate
 
-The architecture will be designed to remain within an estimated monthly cost of AUD 20 when fully deployed.
+A 730-hour/month pay-as-you-go estimate was prepared for Australia East using the Azure Pricing Calculator. Promotional credits and account-specific free allowances were intentionally excluded so the estimate represents a public PAYG deployment.
 
-The final estimate, Azure region, VM SKU and pricing assumptions will be documented after current Azure pricing is validated.
+| Component | Assumption | Estimated monthly cost (AUD) |
+| --- | --- | ---: |
+| VM compute | 2 × `Standard_B2pts_v2`, Linux, 730 hours | A$21.52 |
+| OS disks | 2 × Standard HDD S4 | A$6.90 |
+| Standard Load Balancer | 2 rules, 1 GB processed | A$25.38 |
+| Standard static Public IPv4 | 1 address, 730 hours | A$5.08 |
+| **Total** | | **A$58.88/month** |
 
-## Assumptions
+The original Azure Pricing Calculator export is retained at [`docs/evidence/cost/ExportedEstimate.xlsx`](docs/evidence/cost/ExportedEstimate.xlsx). The workbook is supporting evidence; the table above is included so the estimate can be reviewed directly in GitHub without requiring Excel.
 
-- The solution is intended as a demonstration/lab workload rather than a production application.
-- HTTP is sufficient for demonstrating load balancing and instance recovery.
-- The default NGINX page is sufficient for validating the web tier.
-- Backend instances do not require individual public IP addresses.
+The requested AUD 20/month target is therefore **not met** for a continuously running 730-hour deployment of this exact supported architecture. The design retains Standard Load Balancer rather than selecting the retired Basic SKU purely to reduce the estimate. For a short-lived lab, destroying the environment when it is not required materially reduces actual spend.
 
-Additional assumptions will be documented as implementation progresses.
+Azure Load Balancer SKU reference:
+https://learn.microsoft.com/en-us/azure/load-balancer/skus
 
-## Optional Enhancements
+## Assumptions and Trade-offs
 
-After the core requirements have been implemented and validated, the project will target:
-
-- Containerising the web page with Docker.
-- Publishing the container image to a free container registry.
-- Automatically pulling and running the container on each instance.
-- A CI workflow for Terraform formatting, validation and/or planning.
-
-These enhancements will only be added after the mandatory infrastructure requirements are proven.
+- This is a demonstration/lab workload, not a production application.
+- The default NGINX page is sufficient to validate provisioning, load balancing and recovery.
+- HTTP is sufficient for the lab; production traffic should use HTTPS/TLS.
+- Australia East is used for the deployment.
+- Normal desired/minimum VMSS capacity is two; autoscale maximum is three as an upper boundary.
+- Low traffic is assumed for the pricing estimate.
+- A single-region design was chosen for scope and cost. Production resilience requirements may justify availability zones and/or multi-region architecture.
 
 ## Cleanup
 
-Terraform-based cleanup instructions and validation will be documented after deployment testing is completed.
+When the environment is no longer required, review the destroy plan and remove all Terraform-managed project resources:
+
+```powershell
+terraform plan -destroy
+terraform destroy
+```
+
+The cleanup workflow was tested successfully and removed all 13 Terraform-managed resources. Terraform only removes resources it manages; unrelated Azure resources outside this Terraform state are not part of the cleanup.
+
+## Optional Enhancements
+
+The mandatory web tier is complete and validated. Optional enhancements can include:
+
+- Containerising the NGINX page with Docker and publishing the image to a free registry.
+- Updating cloud-init so each VM pulls and runs the container automatically.
+- Adding a CI workflow for Terraform formatting and validation.

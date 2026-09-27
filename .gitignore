@@ -13,6 +13,7 @@
 # Terraform plan files
 *.tfplan
 tfplan
+tfplan*
 
 # Terraform crash/error logs
 crash.log
