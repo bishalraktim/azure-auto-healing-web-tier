@@ -194,7 +194,7 @@ az vmss delete-instances `
   --instance-ids 2
 ```
 
-In the selected failure-test capture, one brief failed HTTP request was observed during the transition; subsequent requests returned HTTP 200. Azure then restored the VMSS to two instances by creating a replacement instance. A separate repeat test after the clean rebuild also captured transient failed requests during instance replacement. Both observations are retained as measured evidence rather than being described as zero-downtime.
+In the selected failure-test capture, one brief failed HTTP request was observed during the transition; subsequent requests returned HTTP 200. Azure then restored the VMSS to two instances by creating a replacement instance. A separate repeat test after the clean rebuild also captured brief HTTP request failures during instance replacement, with successful HTTP responses continuing during the transition. Both observations are retained as measured evidence rather than being described as zero-downtime.
 
 The screenshot below captures the continuous HTTP monitor during deliberate instance deletion.
 
@@ -296,7 +296,9 @@ A 730-hour/month pay-as-you-go estimate was prepared for Australia East using th
 | Standard static Public IPv4 | 1 address, 730 hours | A$5.08 |
 | **Total** | | **A$58.88/month** |
 
-The original Azure Pricing Calculator export is retained at [`docs/evidence/cost/ExportedEstimate.xlsx`](docs/evidence/cost/ExportedEstimate.xlsx). The workbook is supporting evidence; the table above is included so the estimate can be reviewed directly in GitHub without requiring Excel.
+The Azure Pricing Calculator estimate used for the cost breakdown is retained below as supporting evidence:
+
+![Azure Pricing Calculator estimate](docs/evidence/cost/azure-pricing-estimate.png)
 
 The requested AUD 20/month target is therefore **not met** for a continuously running 730-hour deployment of this exact supported architecture. The design retains Standard Load Balancer rather than selecting the retired Basic SKU purely to reduce the estimate. For a short-lived lab, destroying the environment when it is not required materially reduces actual spend.
 
