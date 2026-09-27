@@ -8,7 +8,7 @@ The design demonstrates Infrastructure as Code (IaC), N+1 capacity, health-based
 
 ## Why Azure
 
-Azure was selected because it is the cloud platform in which I have the most hands-on infrastructure and hybrid administration experience. This allowed the exercise to focus on resilient architecture and Terraform rather than learning a second cloud platform at the same time.
+Azure was selected because it is the cloud platform in which I have the most hands-on infrastructure and hybrid administration experience. This allowed the project to focus on resilient architecture and Terraform while building on an established Azure infrastructure foundation.
 
 Terraform was selected for IaC because it provides a declarative workflow, reusable modules, execution plans and repeatable lifecycle management. The project was developed and validated with Terraform 1.16.4 and AzureRM provider 4.81.0.
 
@@ -222,7 +222,7 @@ The before/after evidence below shows the original instance IDs, the deliberate 
 
 ![Before and after VMSS instance IDs with replacement validation](docs/evidence/self-healing/02-before-after-instance-ids-and-validation.png)
 
-The test demonstrates automatic restoration of the required VMSS capacity. The observed transient interruption is reported as measured rather than claiming zero dropped requests.
+The test demonstrates automatic restoration of the configured VMSS capacity. Brief HTTP request failures observed during instance replacement are retained in the evidence.
 
 A repeat failure test after the clean rebuild is retained below as additional evidence:
 
@@ -268,7 +268,7 @@ This confirms the committed configuration converges cleanly without unnecessary 
 
 ## Security and Network Design
 
-The lab intentionally keeps the exposure small:
+The deployment intentionally keeps the network exposure small:
 
 - Backend VMSS instances have no individual public IP addresses.
 - No inbound SSH rule is exposed publicly.
@@ -286,7 +286,7 @@ https://learn.microsoft.com/en-us/azure/load-balancer/skus
 
 ## Cost Estimate
 
-A 730-hour/month pay-as-you-go estimate was prepared for Australia East using the Azure Pricing Calculator. Promotional credits and account-specific free allowances were intentionally excluded so the estimate represents a public PAYG deployment.
+A 730-hour/month pay-as-you-go estimate was prepared for Australia East using the Azure Pricing Calculator to provide a consistent cost baseline for the deployed architecture.
 
 | Component | Assumption | Estimated monthly cost (AUD) |
 | --- | --- | ---: |
@@ -300,16 +300,16 @@ The Azure Pricing Calculator estimate used for the cost breakdown is retained be
 
 ![Azure Pricing Calculator estimate](docs/evidence/cost/azure-pricing-estimate.png)
 
-The requested AUD 20/month target is therefore **not met** for a continuously running 730-hour deployment of this exact supported architecture. The design retains Standard Load Balancer rather than selecting the retired Basic SKU purely to reduce the estimate. For a short-lived lab, destroying the environment when it is not required materially reduces actual spend.
+The estimated cost for a continuously running 730-hour deployment is **A$58.88/month**. Standard Load Balancer is retained as the supported load-balancing SKU. For short-lived non-production environments, destroying the infrastructure when it is not required can substantially reduce actual usage costs.
 
 Azure Load Balancer SKU reference:
 https://learn.microsoft.com/en-us/azure/load-balancer/skus
 
 ## Assumptions and Trade-offs
 
-- This is a demonstration/lab workload, not a production application.
+- This is a non-production reference implementation focused on infrastructure resilience and repeatability.
 - The default NGINX page is sufficient to validate provisioning, load balancing and recovery.
-- HTTP is sufficient for the lab; production traffic should use HTTPS/TLS.
+- HTTP is sufficient for this non-sensitive static demonstration; production traffic should use HTTPS/TLS.
 - Australia East is used for the deployment.
 - Normal desired/minimum VMSS capacity is two; autoscale maximum is three as an upper boundary.
 - Low traffic is assumed for the pricing estimate.
@@ -326,10 +326,10 @@ terraform destroy
 
 The cleanup workflow was tested successfully and removed all 13 Terraform-managed resources. Terraform only removes resources it manages; unrelated Azure resources outside this Terraform state are not part of the cleanup.
 
-## Optional Enhancements
+## Further Enhancements
 
-The mandatory web tier is complete and validated. Optional enhancements can include:
+The core web tier is complete and validated. Potential enhancements include:
 
-- Containerising the NGINX page with Docker and publishing the image to a free registry.
+- Containerising the NGINX page with Docker and publishing the image to a container registry.
 - Updating cloud-init so each VM pulls and runs the container automatically.
 - Adding a CI workflow for Terraform formatting and validation.
