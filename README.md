@@ -194,7 +194,7 @@ az vmss delete-instances `
   --instance-ids 2
 ```
 
-In the selected failure-test capture, one brief failed HTTP request was observed during the transition; subsequent requests returned HTTP 200. Azure then restored the VMSS to two instances by creating a replacement instance. A separate repeat test after the clean rebuild showed a short transition spanning approximately four seconds (11:33:20 to 11:33:24), with two failed samples and a successful HTTP 200 sample between them. Both observations are retained as measured evidence rather than being described as zero-downtime.
+In the selected failure-test capture, one brief failed HTTP request was observed during the transition; subsequent requests returned HTTP 200. Azure then restored the VMSS to two instances by creating a replacement instance. A separate repeat test after the clean rebuild also captured transient failed requests during instance replacement. Both observations are retained as measured evidence rather than being described as zero-downtime.
 
 The screenshot below captures the continuous HTTP monitor during deliberate instance deletion.
 
