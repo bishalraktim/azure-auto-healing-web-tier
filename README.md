@@ -2,7 +2,7 @@
 
 ## Overview
 
-This project deploys an auto-healing web tier in Microsoft Azure using Terraform. Internet traffic enters through a Standard Public IP and Azure Standard Load Balancer and is distributed across a Virtual Machine Scale Set (VMSS) running a minimum of two Ubuntu instances. Each instance is provisioned automatically with NGINX by cloud-init.
+This project deploys an auto-healing web tier in Microsoft Azure using Terraform. Internet traffic enters through a Standard Public IP and Azure Standard Load Balancer and is distributed across a Virtual Machine Scale Set (VMSS) running a minimum of two Ubuntu instances. Each instance is provisioned automatically by cloud-init with Docker, which pulls and runs a public ARM64 NGINX container image from GitHub Container Registry (GHCR).
 
 The design demonstrates Infrastructure as Code (IaC), N+1 capacity, health-based instance recovery, automatic capacity restoration, repeatable deployment and Terraform idempotency.
 
@@ -27,7 +27,7 @@ The deployed architecture contains:
 - Azure Standard Load Balancer with HTTP health probe, inbound HTTP rule and explicit outbound rule.
 - Linux Virtual Machine Scale Set with desired/minimum capacity of two instances.
 - Ubuntu 22.04 LTS ARM64 instances using `Standard_B2pts_v2`.
-- cloud-init bootstrap that installs, enables and starts NGINX.
+- cloud-init bootstrap that installs Docker, pulls the public ARM64 image from GHCR and runs the NGINX container on TCP/80.
 - Automatic Instance Repair using the Load Balancer health probe and `Replace` action.
 - Azure Monitor Autoscale configured with minimum/default capacity 2 and maximum 3, maintaining the required minimum capacity after an instance is explicitly deleted.
 
@@ -38,6 +38,12 @@ https://learn.microsoft.com/en-us/azure/virtual-machine-scale-sets/virtual-machi
 
 ```text
 .
+├── .github/
+│   └── workflows/
+│       └── docker-publish.yml
+├── docker/
+│   ├── Dockerfile
+│   └── index.html
 ├── cloud-init.yaml
 ├── main.tf
 ├── moved.tf
@@ -58,6 +64,7 @@ https://learn.microsoft.com/en-us/azure/virtual-machine-scale-sets/virtual-machi
     └── evidence/
         ├── cost/
         ├── deployment/
+        ├── docker/
         ├── idempotency/
         └── self-healing/
 ```
@@ -145,6 +152,12 @@ terraform output
 
 The Public IP can change after a full destroy/rebuild, so validation should always use the current Terraform output rather than a previously allocated address.
 
+At the time of the final container validation, the deployed endpoint was:
+
+<http://20.213.52.138/>
+
+The address above represents the current deployment only. `terraform output -raw web_url` remains the authoritative way to retrieve the endpoint after future rebuilds.
+
 ### Deployment Evidence
 
 The Terraform-managed Azure resources are shown below.
@@ -155,7 +168,7 @@ Two healthy VMSS instances were verified before failure testing:
 
 ![Two VMSS instances](docs/evidence/deployment/02-two-vmss-instances.png)
 
-The load-balanced endpoint successfully serves the default NGINX page:
+The original load-balanced deployment successfully served the default NGINX page before the container enhancement:
 
 ![NGINX load-balanced endpoint](docs/evidence/deployment/03-nginx-load-balanced-endpoint.png)
 
@@ -181,7 +194,7 @@ $webUrl = terraform output -raw web_url
 curl.exe $webUrl
 ```
 
-The response returns the default NGINX welcome page.
+The current deployment returns the custom static page served by the NGINX container.
 
 ### 3. Self-Healing / Capacity Recovery
 
@@ -200,7 +213,7 @@ The screenshot below captures the continuous HTTP monitor during deliberate inst
 
 ![Instance deletion with HTTP monitoring](docs/evidence/self-healing/01-instance-deletion-http-monitor.png)
 
-The replacement instance was subsequently verified with NGINX active and returning HTTP 200 locally:
+For the original native-NGINX validation, the replacement instance was subsequently verified with NGINX active and returning HTTP 200 locally:
 
 ```powershell
 az vmss run-command invoke `
@@ -246,7 +259,7 @@ Plan: 13 to add, 0 to change, 0 to destroy.
 Apply complete! Resources: 13 added, 0 changed, 0 destroyed.
 ```
 
-After the rebuild, the VMSS again contained two instances and the NGINX page was reachable through the newly allocated Load Balancer frontend IP.
+After the rebuild, the VMSS again contained two instances and the web endpoint was reachable through the newly allocated Load Balancer frontend IP.
 
 ### 5. Idempotency
 
@@ -265,6 +278,51 @@ No changes. Your infrastructure matches the configuration.
 This confirms the committed configuration converges cleanly without unnecessary infrastructure changes.
 
 ![Terraform plan showing no changes](docs/evidence/idempotency/01-terraform-plan-no-changes.png)
+
+## Container Image and Automated VM Provisioning
+
+The web workload is packaged as an NGINX container image. The repository includes a `Dockerfile` and static `index.html`, while the GitHub Actions workflow builds the image for `linux/arm64` and publishes it to GitHub Container Registry.
+
+Published image:
+
+```text
+ghcr.io/bishalraktim/azure-auto-healing-web-tier:latest
+```
+
+New VMSS instances bootstrap through `cloud-init.yaml`. The bootstrap installs Docker, enables the Docker service, pulls the public image and starts the container with a restart policy and host TCP/80 mapped to container TCP/80. This means replacement instances created by the scale set can provision the web workload without manual configuration.
+
+The container build and publication completed successfully:
+
+![GitHub Actions container build](docs/evidence/docker/01-github-container-build.png)
+
+After updating the VMSS model, instances were replaced sequentially so that capacity remained available during the migration. The replacement instances automatically installed Docker and ran the published image:
+
+![VMSS Docker validation](docs/evidence/docker/02-vmss-docker-validation.png)
+
+The public Load Balancer endpoint serves the containerised static page:
+
+![Containerised web endpoint](docs/evidence/docker/03-containerised-web-endpoint.png)
+
+The VMSS was then verified with two healthy replacement instances on the latest model:
+
+![Containerised VMSS instances](docs/evidence/docker/04-containerised-vmss-instances.png)
+
+The current container state on a VMSS instance can be checked without exposing SSH publicly:
+
+```powershell
+az vmss run-command invoke `
+  --resource-group web-lab-rg `
+  --name web-lab-vmss `
+  --instance-id <instance-id> `
+  --command-id RunShellScript `
+  --scripts "docker --version; docker ps; curl -s -o /dev/null -w '%{http_code}' http://localhost"
+```
+
+A final `terraform plan` after the container rollout reported:
+
+```text
+No changes. Your infrastructure matches the configuration.
+```
 
 ## Security and Network Design
 
@@ -308,7 +366,7 @@ https://learn.microsoft.com/en-us/azure/load-balancer/skus
 ## Assumptions and Trade-offs
 
 - This is a non-production reference implementation focused on infrastructure resilience and repeatability.
-- The default NGINX page is sufficient to validate provisioning, load balancing and recovery.
+- A small static NGINX page is sufficient to validate provisioning, load balancing and recovery.
 - HTTP is sufficient for this non-sensitive static demonstration; production traffic should use HTTPS/TLS.
 - Australia East is used for the deployment.
 - Normal desired/minimum VMSS capacity is two; autoscale maximum is three as an upper boundary.
@@ -330,6 +388,7 @@ The cleanup workflow was tested successfully and removed all 13 Terraform-manage
 
 The core web tier is complete and validated. Potential enhancements include:
 
-- Containerising the NGINX page with Docker and publishing the image to a container registry.
-- Updating cloud-init so each VM pulls and runs the container automatically.
-- Adding a CI workflow for Terraform formatting and validation.
+- Adding a Terraform CI workflow for formatting and validation.
+- Adding HTTPS/TLS with DNS and trusted certificate management.
+- Adding centralised application and infrastructure monitoring.
+- Extending the design across availability zones where workload requirements justify it.

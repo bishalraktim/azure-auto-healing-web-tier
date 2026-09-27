@@ -3,8 +3,10 @@
 package_update: true
 
 packages:
-  - nginx
+  - docker.io
 
 runcmd:
-  - systemctl enable nginx
-  - systemctl start nginx
+  - systemctl enable --now docker
+  - docker pull ghcr.io/bishalraktim/azure-auto-healing-web-tier:latest
+  - docker rm -f web || true
+  - docker run -d --name web --restart unless-stopped -p 80:80 ghcr.io/bishalraktim/azure-auto-healing-web-tier:latest
