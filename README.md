@@ -6,9 +6,9 @@ This project deploys an auto-healing web tier in Microsoft Azure using Terraform
 
 The design demonstrates Infrastructure as Code (IaC), N+1 capacity, health-based instance recovery, automatic capacity restoration, repeatable deployment and Terraform idempotency.
 
-## Why Azure
+## Platform
 
-Azure was selected because it is the cloud platform in which I have the most hands-on infrastructure and hybrid administration experience. This allowed the project to focus on resilient architecture and Terraform while building on an established Azure infrastructure foundation.
+Azure was selected as the cloud platform for this implementation. The solution uses Azure-native services including Virtual Machine Scale Sets, Standard Load Balancer, Azure Monitor, and automatic instance repair to implement the required high-availability and self-healing architecture.
 
 Terraform was selected for IaC because it provides a declarative workflow, reusable modules, execution plans and repeatable lifecycle management. The project was developed and validated with Terraform 1.16.4 and AzureRM provider 4.81.0.
 
